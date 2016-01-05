@@ -1,0 +1,130 @@
+SET TERM ^ ;
+
+create or alter procedure FORMATAR_NOME (
+    NOME D_VARCHAR_1000)
+returns (
+    NOME_FORMATADO D_VARCHAR_1000)
+as
+declare variable V_COM_ACENTO D_VARCHAR_50;
+declare variable V_SEM_ACENTO D_VARCHAR_50;
+declare variable V_CARACTERES_PERMITIDOS D_VARCHAR_50;
+declare variable I D_INTEGER;
+declare variable V_CARACTER_ATUAL D_CHAR_1;
+declare variable V_NOMES_NAO_PERMITIDOS D_VARCHAR_1000;
+declare variable V_NOME_AUXILIAR D_VARCHAR_1000;
+declare variable V_NOME_ATUAL D_VARCHAR_1000;
+declare variable V_PROXIMO_CARACTER D_CHAR_1;
+declare variable V_DEPOIS_DO_PROXIMO_CARACTER D_CHAR_1;
+begin
+
+    nome = upper(nome);
+
+    v_com_acento = 'ÁÉÍÓÚÝÀÈÌÒÙÂÊÎÔÛÃÕÑÄËÏÖÜŸ';
+    v_sem_acento = 'AEIOUYAEIOUAEIOUAONAEIOUY';
+    v_caracteres_permitidos = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÇ -_.';
+    v_nomes_nao_permitidos =
+        '[DA][DAS][DE][DO][DOS][DI][DU][DEL][DER][LA][LE][LES][LOS][VAN][VON]' ||
+        '[EL][BEL][CEL][ENG][MAJ][MIN][PROF][TEN][CAP][DR][DRA][GAL][MED][PE]' ||
+        '[SARG][VVA][JUNIOR][BISNETA][BISNETO][NETO][NETOS][NETA][NETAS]' ||
+        '[NETTO][NETTA][FILHA][FILHAS][FILHO][FILHOS][SOBRINHO][SOBRINHOS]' ||
+        '[SOBRINHA][SOBRINHAS][PRIMO][PRIMOS][PRIMA][PRIMAS][PRIMEIRO]' ||
+        '[PRIMEIROS][PRIMEIRA][PRIMEIRAS][SEGUNDO][SEGUNDOS][SEGUNDA]' ||
+        '[SEGUNDAS][TERCEIRO][TERCEIROS][TERCEIRA][TERCEIRAS][JR][BIS][NT]' ||
+        '[FA][FO][SB][PM][PRI][SEG][TER][LTD][LTDA][LIMITADA][SC][ME][CIA][SA]' ||
+        '[ESPOLIO][EPP][DOUTOR][DOUTORA][PROFESSOR][PROFESSORA][COMPANHIA]' ||
+        '[A][B][C][D][E][F][G][H][I][J][K][L][M][N][O][P][Q][R][S][T][U][V][W][X][Y][Z][Ç]';
+    i = 1;
+    nome_formatado = '';
+    
+    while (i < (char_length(nome) + 1)) do begin
+
+        v_caracter_atual = substring(nome from i for 1);
+
+        -- Remove acentuação --
+        if (v_com_acento containing v_caracter_atual) then
+            nome_formatado = nome_formatado ||
+                substring(v_sem_acento from
+                position(v_caracter_atual, v_com_acento)
+                for 1);
+        -- Remove letras não permitidas e caracteres especiais
+        -- Troca traço (-) e underline (_) e ponto (.) por espaço
+        -- para evitar problema com AUTO ESCOLA = AUTO-ESCOLA = AUTO_ESCOLA
+        -- J.O. Agropecuária S/A, etc..
+        else if (v_caracteres_permitidos containing v_caracter_atual) then begin
+            if ((v_caracter_atual = '-') or (v_caracter_atual = '_') or (v_caracter_atual = '.')) then v_caracter_atual = ' ';
+            nome_formatado = nome_formatado || v_caracter_atual;
+        end
+
+        i = i + 1;
+
+    end
+
+    v_nome_auxiliar = replace(nome_formatado,'  ',' ');
+    v_nome_auxiliar = trim (v_nome_auxiliar) || ' ';
+    nome_formatado = '';
+
+    while (position(' ',v_nome_auxiliar) > 0) do begin
+
+        -- pega a 1ª palavra do nome
+        v_nome_atual = substring(v_nome_auxiliar from 1 for position(' ',v_nome_auxiliar) - 1);
+        -- remove a 1ª palavra do nome completo
+        v_nome_auxiliar = substring(v_nome_auxiliar from position(' ',v_nome_auxiliar) + 1 for char_length(v_nome_auxiliar));
+    
+        -- Remove palavras de ligação, parentesco, etc..
+        --exemplo:- DE DO DAS, FILHO, NETO, S/A, LTDA, ESPOLIO
+        -- Palavras de ligação (DE, DA, DAS, DO, ETC..)
+        -- Palavras de parentesco (JUNIOR, JUNIOR, NETO, ETC..)
+        -- Palavras de pessoa jurídica (LTDA, ME, SA, CIA, ETC..)
+        -- Remove todas as Letras que ficam sozinhas
+        if ((not (v_nomes_nao_permitidos containing '[' || v_nome_atual || ']')) and
+            (trim(v_nome_atual) <> '')) then
+            nome_formatado = nome_formatado || v_nome_atual || ' ';
+
+    end
+
+    -- Remove letras repetidas que aparecem em sequência
+    -- exemplos: Appparecido -> Apparecido; Apppparrreciiiddo = Aparecido
+    -- OBS:- Só mantem dois S em sequência (SS), pois SS = Ç = S, e S = Z
+    i = 1;
+    v_nome_auxiliar = trim(replace(nome_formatado,'  ',' '));
+    nome_formatado = '';
+
+    while (i < (char_length(v_nome_auxiliar) + 1)) do begin
+
+        v_caracter_atual = substring(v_nome_auxiliar from i for 1);
+        v_proximo_caracter = substring(v_nome_auxiliar from i + 1 for 1);
+        v_depois_do_proximo_caracter = substring(v_nome_auxiliar from i + 2 for 1);
+
+        -- Se as letras forem diferentes, já adiciona a letra
+        if (v_caracter_atual <> v_proximo_caracter) then
+            nome_formatado = nome_formatado || v_caracter_atual;
+        -- As duas letras são iguais e são S (SS), se a terceira não for S
+        -- já coloca o SS e passa para a próxima letra depois dos SS
+        else if ((v_caracter_atual = 'S') and (v_depois_do_proximo_caracter <> 'S')) then begin
+            nome_formatado = nome_formatado || v_caracter_atual || v_proximo_caracter;
+            i = i + 1;
+        end
+
+        -- Se as letras forem iguais, ou se tiver mais de dois S (SSS..SSS)..
+        -- .. simplemente vai passando para a próxima letra
+        i = i + 1;
+
+    end
+
+    nome_formatado = replace(nome_formatado,'  ',' ');
+    nome_formatado = trim(nome_formatado);
+
+  suspend;
+end^
+
+SET TERM ; ^
+
+COMMENT ON PROCEDURE FORMATAR_NOME IS
+'Stored Procedure auxiliar para a Stored Procedure Fonética
+Formata o nome ou string desejada para ser processada
+Desenvolvido por Fábio "Kym" Nascimento';
+
+/* Existing privileges on this procedure */
+
+GRANT EXECUTE ON PROCEDURE FORMATAR_NOME TO PROCEDURE FONETICA;
+GRANT EXECUTE ON PROCEDURE FORMATAR_NOME TO SYSDBA;
