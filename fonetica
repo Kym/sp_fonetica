@@ -1,0 +1,263 @@
+SET TERM ^ ;
+
+create or alter procedure FONETICA (
+    ENTRADA D_VARCHAR_1000)
+returns (
+    SAIDA D_VARCHAR_1000)
+as
+declare variable I D_INTEGER;
+declare variable AUXILIAR D_VARCHAR_1000;
+declare variable LETRA_ATUAL D_CHAR_1;
+declare variable PROXIMA_LETRA D_CHAR_1;
+declare variable DEPOIS_DA_PROXIMA_LETRA D_CHAR_1;
+declare variable VOGAIS D_CHAR_6;
+declare variable LETRA_ANTERIOR D_CHAR_1;
+declare variable DEPOIS_DE_DEPOIS_DA_PROXIMA_LETRA D_CHAR_1;
+declare variable CONSOANTES D_CHAR_22;
+begin
+
+    select nome_formatado from formatar_nome(:entrada) into :saida;
+
+    -- Começa a montar a fonética do nome
+    i = 1;
+    auxiliar = '';
+    vogais = 'AEIOUY';
+    consoantes = 'BCDFGHJKLMNPQRSTVWXZÇ';
+
+    -- Adiciona espaço no começo e final do nome para saber quando o
+    -- sobrenome termina e não dar problema ao testar caracter anterior
+    saida = ' ' || saida || ' ';
+
+    while (i < (char_length(saida) + 1)) do begin
+
+        letra_atual = substring(saida from i for 1);
+        proxima_letra = substring(saida from i + 1 for 1);
+
+        if (i > 1) then
+            letra_anterior = substring(saida from i - 1 for 1);
+        else
+            letra_anterior = ' ';
+
+        depois_da_proxima_letra = substring(saida from i + 2 for 1);
+
+        -- Letras que não precisam de tratamento
+        if (
+            (letra_atual = 'A') or
+            (letra_atual = 'B') or
+            (letra_atual = 'E') or
+            (letra_atual = 'F') or
+            (letra_atual = 'J') or
+            (letra_atual = 'K') or
+            (letra_atual = 'R') or
+            (letra_atual = 'T') or
+            (letra_atual = 'U') or
+            (letra_atual = 'V') or
+            (letra_atual = 'X') or
+            (letra_atual = 'Z')
+           ) then auxiliar = auxiliar || letra_atual;
+
+        else if (letra_atual = 'C') then begin
+
+            -- c mudo - viCTor, oCTavio, benediCTo, jaCQueline
+            -- <vogal>C<consoante><vogal>
+            if ((vogais containing letra_anterior) and (consoantes containing proxima_letra) and (proxima_letra <> 'H') and (vogais containing depois_da_proxima_letra)) then
+                auxiliar = auxiliar;
+            -- CHR = K, CHRistian = Cristian = Kristian
+            else if ((proxima_letra = 'H') and (depois_da_proxima_letra = 'R')) then begin
+                auxiliar = auxiliar || 'KR';
+                i = i + 2; -- pula o H e o R
+            -- CH = X
+            end else if (proxima_letra = 'H') then
+                auxiliar = auxiliar || 'X';
+            -- CE e CI = S
+            else if ((proxima_letra = 'E') or (proxima_letra = 'I'))  then
+                auxiliar = auxiliar || 'S';
+            -- CC e CK = pula próximo C ou K para evitar transformar C em K no caso de ConfeCCÃO, Jack
+            else if ((proxima_letra = 'C') or (proxima_letra = 'K'))  then
+                i = i + 1;
+            -- No geral, C = K
+            else
+                auxiliar = auxiliar || 'K';
+
+        -- Ç = S
+        end else if (letra_atual = 'Ç') then
+            auxiliar = auxiliar || 'S';
+
+        -- D mudo, D<consoante>, siDNei = siDiNey,
+        -- exceção: DR (sandra), DL (??)
+        -- D no final do nome = DI (Hadad = Hadadi)
+        else if (letra_atual = 'D') then begin
+
+            if ((proxima_letra = ' ') or
+                ((consoantes containing proxima_letra) and (proxima_letra <> 'R') and (proxima_letra <> 'L'))) then
+                auxiliar = auxiliar || 'DI';
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- G
+        end else if (letra_atual = 'G') then begin
+
+            -- Gi, Ge, GHi, GHe, G = J
+            if (((proxima_letra = 'E') or (proxima_letra = 'I')) or
+               (
+                    (proxima_letra = 'H') and (
+                        (depois_da_proxima_letra = 'E') or (depois_da_proxima_letra = 'I')
+                    )
+               ))  then
+                auxiliar = auxiliar || 'J';
+            -- G mudo, <vogal>G<consoante><vogal>, maGdalena = MADALENA, iGnacio = inacio
+            else if ((vogais containing letra_anterior) and (consoantes containing proxima_letra) and (vogais containing depois_da_proxima_letra)) then
+                auxiliar = auxiliar;
+            -- G mudo, <consoante><consoante><vogal>, welinGton = welinton
+            else if ((consoantes containing letra_atual) and (consoantes containing proxima_letra) and (vogais containing depois_da_proxima_letra)) then
+                auxiliar = auxiliar;
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- H no final da palavra, é substituido por 'E', para simular o som de..
+        -- ..uma vogal no final, tipo 'ELIZABETH' = 'ELIZABETI' = 'ELIZABETE'
+        end else if (letra_atual = 'H') then begin
+
+            if ((letra_anterior = 'T') and (proxima_letra = ' ')) then
+                auxiliar = auxiliar || 'E';
+
+        -- I no meio de EiA ou EiO é removido (ANDREIA = ANDREA)
+        end else if (letra_atual = 'I') then begin
+
+            if ((letra_anterior = 'E') and ((proxima_letra = 'A') or (proxima_letra = 'O'))) then
+                auxiliar = auxiliar;
+            -- <consoante>IE remove o I, micHIElin = michElin = mixielin
+            else if ((consoantes containing letra_anterior) and (proxima_letra = 'E')) then
+                auxiliar = auxiliar;
+            else
+                auxiliar = auxiliar || 'I';
+
+        -- L
+        end else if (letra_atual = 'L') then begin
+
+            -- LH = L, viLHEna = viLena
+            if (proxima_letra = 'H') then begin
+                auxiliar = auxiliar || 'L';
+                i = i + 1;
+            -- L no final da palavra ou antes de consoante = U, magaU = magaL, aLberto = auberto
+            end else if ((consoantes containing proxima_letra) or (proxima_letra = ' ')) then
+               auxiliar = auxiliar || 'U';
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- Palavras terminadas em M ou N devem ser iguais, são setadas para terminar com M
+        -- ex: MiriaM = MiriaN
+        -- <vogal><M,N><consoante> vira M, saNtos = saMtos
+        end else if ((letra_atual = 'M') or (letra_atual = 'N')) then begin
+
+            if ((proxima_letra = ' ') or ((vogais containing letra_anterior) and (consoantes containing proxima_letra))) then
+                auxiliar = auxiliar || 'M';
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- O no final vira U, MARCO = MARCU = MARCOS = MARCUS
+        -- isso porque o S no final também é removido
+        end else if (letra_atual = 'O') then begin
+
+            if ((proxima_letra = ' ') or ((proxima_letra = 'S') and (depois_da_proxima_letra = ' '))) then
+                auxiliar = auxiliar || 'U';
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- P
+        end else if (letra_atual = 'P') then begin
+
+            -- PH = F, e já pula o H
+            if (proxima_letra = 'H') then begin
+                auxiliar = auxiliar || 'F';
+                i = i + 1;
+            -- P mudo (baPTistella) <vogal>P<consoante>
+            end else if ((vogais containing letra_anterior) and
+                (consoantes containing proxima_letra)) then begin
+                    auxiliar = auxiliar;
+            -- caso contrário adiciona o P
+            end else
+                auxiliar = auxiliar || letra_atual;
+
+        -- Q vira K
+        end else if (letra_atual = 'Q') then
+            auxiliar = auxiliar || 'K';
+
+        else if (letra_atual = 'S') then begin
+
+            -- SH = X
+            if (proxima_letra = 'H') then
+                auxiliar = auxiliar || 'X';
+            -- S<final> ou S<' '>, remove para dar fonética em singular e plural
+            -- Marco = MarcoS
+            -- mudou, dava problema com nomes terminados com S tipo LuiZ/LuiS
+            -- agora S no final vira Z
+            else if ((proxima_letra = ' ') or (proxima_letra = ''))  then
+                --auxiliar = auxiliar;
+                auxiliar = auxiliar || 'Z';
+            -- S<consoante> no começo da palavra vira ES, SCanavini = ESCanavini
+            else if ((letra_anterior = ' ') and (consoantes containing proxima_letra)) then
+                auxiliar = auxiliar || 'ES';
+            -- <vogal>S<vogal> = Z (souZa = souSa)
+            else if ((vogais containing letra_anterior) and (vogais containing proxima_letra)) then
+                auxiliar = auxiliar || 'Z';
+            -- <vogal>SC<vogal> naSCimento, peSCe
+            else if ((vogais containing letra_anterior) and (proxima_letra = 'C') and (vogais containing depois_da_proxima_letra)) then
+                auxiliar = auxiliar;
+            -- Caso contrário S = S
+            else
+                auxiliar = auxiliar || letra_atual;
+
+        -- W<vogal> = V, caso contrario, ignora
+        -- W<vogal><consoante><consoante> = V (wilma, walter)
+        -- W<vogal><consoante><vogal> = U (welinton, wilian)
+        end else if (letra_atual = 'W') then begin
+
+            depois_de_depois_da_proxima_letra = substring(saida from i + 3 for 1);
+
+            if ((vogais containing proxima_letra) and
+                (consoantes containing depois_da_proxima_letra) and
+                (consoantes containing depois_de_depois_da_proxima_letra)) then
+                auxiliar = auxiliar || 'V';
+            else if ((vogais containing proxima_letra) and
+                (consoantes containing depois_da_proxima_letra) and
+                (vogais containing depois_de_depois_da_proxima_letra)) then
+                auxiliar = auxiliar || 'U';
+
+        -- y = i, sIdnei = sYdneY
+        end else if (letra_atual = 'Y') then
+            auxiliar = auxiliar || 'I';
+
+        -- Se não for nenhuma letra que precisa de tratamento, só a inclui
+        else
+            auxiliar = auxiliar || letra_atual;
+
+        -- Se proximo caracter = caracter atual, pula
+        if (letra_atual = proxima_letra) then
+            i = i + 2;
+        else
+            i = i + 1;
+
+    end
+
+    saida = trim(auxiliar);
+
+    if (saida = '') then
+        saida = entrada;
+
+  suspend;
+end^
+
+SET TERM ; ^
+
+COMMENT ON PROCEDURE FONETICA IS
+'Stored Procedure Fonética para Firebird (2.5+)
+Desenvolvida por Fábio "Kym" Nascimento';
+
+/* Following GRANT statetements are generated automatically */
+
+GRANT EXECUTE ON PROCEDURE FORMATAR_NOME TO PROCEDURE FONETICA;
+
+/* Existing privileges on this procedure */
+
+GRANT EXECUTE ON PROCEDURE FONETICA TO SYSDBA;
